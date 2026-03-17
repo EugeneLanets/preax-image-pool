@@ -4,7 +4,7 @@
 // @version      1.2.0
 // @description  Two image pools for drag-and-drop paste into Lexical editor on preax.ru/review
 // @author       user
-// @match        https://preax.ru/review*
+// @match        https://preax.ru/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -288,6 +288,28 @@
   panels.forEach((p) => container.appendChild(p.el));
   wrapper.appendChild(container);
   document.body.appendChild(wrapper);
+
+  // ─── URL visibility guard ─────────────────────────────────────────────────────
+  function isReviewPage() {
+    return window.location.href.includes('preax.ru/review');
+  }
+
+  function syncVisibility() {
+    wrapper.style.display = isReviewPage() ? '' : 'none';
+  }
+
+  // Intercept SPA history mutations
+  ['pushState', 'replaceState'].forEach((method) => {
+    const orig = history[method];
+    history[method] = function (...args) {
+      const result = orig.apply(this, args);
+      syncVisibility();
+      return result;
+    };
+  });
+  window.addEventListener('popstate', syncVisibility);
+
+  syncVisibility(); // initial check
 
   // Restore collapsed state
   if (localStorage.getItem('pip-collapsed') === '1') {
