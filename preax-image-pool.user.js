@@ -301,6 +301,109 @@
     #pip-modal-close:hover {
       background: rgba(255, 255, 255, 0.35);
     }
+
+    .pip-modal-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      z-index: 1;
+    }
+
+    .pip-modal-arrow:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .pip-modal-arrow.pip-modal-arrow-show {
+      display: flex;
+    }
+
+    #pip-modal-prev {
+      left: 30px;
+    }
+
+    #pip-modal-next {
+      right: 30px;
+    }
+
+    #pip-modal-thumbnails {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      gap: 6px;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      max-width: 90vw;
+      overflow-x: auto;
+    }
+
+    #pip-modal-thumbnails.pip-modal-thumbnails-show {
+      display: flex;
+    }
+
+    .pip-modal-thumb-wrap {
+      position: relative;
+      width: 50px;
+      height: 50px;
+      flex-shrink: 0;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.15s;
+    }
+
+    .pip-modal-thumb-wrap:hover,
+    .pip-modal-thumb-wrap.pip-modal-thumb-active {
+      opacity: 1;
+    }
+
+    .pip-modal-thumb {
+      width: 50px;
+      height: 50px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 2px solid transparent;
+      display: block;
+    }
+
+    .pip-modal-thumb-wrap.pip-modal-thumb-active .pip-modal-thumb {
+      border-color: #fff;
+    }
+
+    .pip-modal-thumb-del {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #c62828;
+      color: #fff;
+      cursor: pointer;
+      border: none;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+
+    .pip-modal-thumb-wrap:hover .pip-modal-thumb-del {
+      opacity: 1;
+    }
   `;
   document.head.appendChild(style);
 
@@ -338,31 +441,152 @@
   modal.id = 'pip-modal';
   modal.innerHTML = `
     <button id="pip-modal-close">${icon(IC_CLOSE, 24)}</button>
+    <button id="pip-modal-prev" class="pip-modal-arrow">${icon(IC_LEFT, 24)}</button>
+    <button id="pip-modal-next" class="pip-modal-arrow">${icon(IC_RIGHT, 24)}</button>
     <img id="pip-modal-img" alt="">
+    <div id="pip-modal-thumbnails"></div>
   `;
   document.body.appendChild(modal);
 
   const modalImg = modal.querySelector('#pip-modal-img');
   const modalClose = modal.querySelector('#pip-modal-close');
+  const modalPrev = modal.querySelector('#pip-modal-prev');
+  const modalNext = modal.querySelector('#pip-modal-next');
+  const modalThumbnails = modal.querySelector('#pip-modal-thumbnails');
 
-  function openModal(src) {
+  // State for modal navigation
+  let modalCurrentIdx = -1;
+  let modalCurrentPoolIdx = -1;
+
+  function updateModalArrows() {
+    const pool = pools[modalCurrentPoolIdx];
+    const hasPrev = pool && pool.length > 1;
+    modalPrev.classList.toggle('pip-modal-arrow-show', hasPrev);
+    modalNext.classList.toggle('pip-modal-arrow-show', hasPrev);
+  }
+
+  function renderModalThumbnails() {
+    if (modalCurrentPoolIdx === -1) return;
+
+    const pool = pools[modalCurrentPoolIdx];
+    const dataUrls = poolDataUrls[modalCurrentPoolIdx];
+
+    modalThumbnails.innerHTML = '';
+
+    if (pool.length <= 1) {
+      modalThumbnails.classList.remove('pip-modal-thumbnails-show');
+      return;
+    }
+
+    pool.forEach((file, idx) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'pip-modal-thumb-wrap' + (idx === modalCurrentIdx ? ' pip-modal-thumb-active' : '');
+
+      const img = document.createElement('img');
+      img.className = 'pip-modal-thumb';
+      img.src = dataUrls[idx];
+      img.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modalCurrentIdx = idx;
+        modalImg.src = dataUrls[idx];
+        renderModalThumbnails();
+      });
+
+      const del = document.createElement('button');
+      del.className = 'pip-modal-thumb-del';
+      del.innerHTML = icon(IC_CLOSE, 9);
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wrapEl = getWrapByDataUrl(dataUrls[idx]);
+        removeFromPool(modalCurrentPoolIdx, wrapEl);
+        // After removal, adjust index or close modal
+        if (poolDataUrls[modalCurrentPoolIdx].length === 0) {
+          closeModal();
+          return;
+        }
+        // Adjust index: if deleted last item, go to new last; otherwise stay at same index
+        if (idx >= poolDataUrls[modalCurrentPoolIdx].length) {
+          modalCurrentIdx = poolDataUrls[modalCurrentPoolIdx].length - 1;
+        } else {
+          modalCurrentIdx = idx;
+        }
+        modalImg.src = poolDataUrls[modalCurrentPoolIdx][modalCurrentIdx];
+        renderModalThumbnails();
+      });
+
+      wrap.appendChild(img);
+      wrap.appendChild(del);
+      modalThumbnails.appendChild(wrap);
+    });
+
+    modalThumbnails.classList.add('pip-modal-thumbnails-show');
+  }
+
+  function getWrapByDataUrl(dataUrl) {
+    // Find the wrap element in the dropzone by matching img src
+    for (let idx = 0; idx < pools.length; idx++) {
+      const dataUrls = poolDataUrls[idx];
+      const foundIdx = dataUrls.indexOf(dataUrl);
+      if (foundIdx !== -1) {
+        const dropzone = document.getElementById(`pip-dropzone-${idx}`);
+        const wraps = Array.from(dropzone.querySelectorAll('.pip-thumb-wrap'));
+        if (wraps[foundIdx]) return wraps[foundIdx];
+      }
+    }
+    return null;
+  }
+
+  function openModal(src, poolIdx = -1, imgIdx = -1) {
     modalImg.src = src;
     modal.classList.add('pip-modal-open');
+    modalCurrentIdx = imgIdx;
+    modalCurrentPoolIdx = poolIdx;
+    wrapper.style.display = 'none'; // Hide pools when modal is open
+    updateModalArrows();
+    renderModalThumbnails();
   }
 
   function closeModal() {
     modal.classList.remove('pip-modal-open');
     modalImg.src = '';
+    modalCurrentIdx = -1;
+    modalCurrentPoolIdx = -1;
+    wrapper.style.display = ''; // Show pools again
+    modalThumbnails.classList.remove('pip-modal-thumbnails-show');
+  }
+
+  function navigateModal(direction) {
+    if (modalCurrentPoolIdx === -1 || modalCurrentIdx === -1) return;
+    const pool = pools[modalCurrentPoolIdx];
+    if (!pool || pool.length < 2) return;
+
+    let newIdx = modalCurrentIdx + direction;
+    if (newIdx < 0) newIdx = pool.length - 1;
+    if (newIdx >= pool.length) newIdx = 0;
+
+    modalCurrentIdx = newIdx;
+    modalImg.src = poolDataUrls[modalCurrentPoolIdx][newIdx];
+    updateModalArrows();
+    renderModalThumbnails();
   }
 
   modalClose.addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => {
     if (e.target === modal) closeModal();
   });
+  modalPrev.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigateModal(-1);
+  });
+  modalNext.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigateModal(1);
+  });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal.classList.contains('pip-modal-open')) {
-      closeModal();
-    }
+    if (!modal.classList.contains('pip-modal-open')) return;
+    if (e.key === 'Escape') closeModal();
+    if (e.key === 'ArrowLeft') navigateModal(-1);
+    if (e.key === 'ArrowRight') navigateModal(1);
   });
 
   // ─── URL visibility guard ─────────────────────────────────────────────────────
@@ -586,9 +810,13 @@
       if (deletedDataUrl === currentModalSrc) {
         closeModal();
       }
+      // Refresh modal thumbnails if modal is open
+      if (modal.classList.contains('pip-modal-open') && modalCurrentPoolIdx === idx) {
+        renderModalThumbnails();
+      }
     });
 
-    const renderThumb = (dataUrl) => {
+    const renderThumb = (dataUrl, idx) => {
       poolDataUrls[idx].push(dataUrl);
       savePool(idx);
       const img = document.createElement('img');
@@ -601,15 +829,17 @@
       wrap.addEventListener('click', (e) => {
         if (e.target === del) return;
         e.stopPropagation();
-        openModal(dataUrl);
+        const wraps = Array.from(dropzone.querySelectorAll('.pip-thumb-wrap'));
+        const imgIdx = wraps.indexOf(wrap);
+        openModal(dataUrl, idx, imgIdx);
       });
     };
 
     if (existingDataUrl) {
-      renderThumb(existingDataUrl);
+      renderThumb(existingDataUrl, idx);
     } else {
       const reader = new FileReader();
-      reader.onload = (e) => renderThumb(e.target.result);
+      reader.onload = (e) => renderThumb(e.target.result, idx);
       reader.readAsDataURL(file);
     }
 
@@ -640,6 +870,10 @@
     dropzone.innerHTML = `<div class="pip-placeholder">Перетащите изображения<br>или нажмите для выбора</div>`;
     updateCount(idx);
     setStatus(idx, '');
+    // Close modal if clearing the pool currently displayed
+    if (modalCurrentPoolIdx === idx) {
+      closeModal();
+    }
   }
 
   function updateCount(idx) {
