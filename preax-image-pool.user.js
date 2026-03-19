@@ -219,8 +219,8 @@
       object-fit: cover;
       border-radius: 5px;
       border: 1px solid #333;
-      pointer-events: none;
       display: block;
+      cursor: pointer;
     }
 
     .pip-thumb-del {
@@ -257,6 +257,50 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
+    #pip-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2147483646;
+    }
+
+    #pip-modal.pip-modal-open {
+      display: flex;
+    }
+
+    #pip-modal-img {
+      max-width: 90vw;
+      max-height: 90vh;
+      object-fit: contain;
+    }
+
+    #pip-modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    #pip-modal-close:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
   `;
   document.head.appendChild(style);
 
@@ -288,6 +332,38 @@
   panels.forEach((p) => container.appendChild(p.el));
   wrapper.appendChild(container);
   document.body.appendChild(wrapper);
+
+  // ─── Modal ────────────────────────────────────────────────────────────────────
+  const modal = document.createElement('div');
+  modal.id = 'pip-modal';
+  modal.innerHTML = `
+    <button id="pip-modal-close">${icon(IC_CLOSE, 24)}</button>
+    <img id="pip-modal-img" alt="">
+  `;
+  document.body.appendChild(modal);
+
+  const modalImg = modal.querySelector('#pip-modal-img');
+  const modalClose = modal.querySelector('#pip-modal-close');
+
+  function openModal(src) {
+    modalImg.src = src;
+    modal.classList.add('pip-modal-open');
+  }
+
+  function closeModal() {
+    modal.classList.remove('pip-modal-open');
+    modalImg.src = '';
+  }
+
+  modalClose.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('pip-modal-open')) {
+      closeModal();
+    }
+  });
 
   // ─── URL visibility guard ─────────────────────────────────────────────────────
   function isReviewPage() {
@@ -501,7 +577,15 @@
     del.title = 'Удалить';
     del.addEventListener('click', (e) => {
       e.stopPropagation();
+      const wraps = Array.from(dropzone.querySelectorAll('.pip-thumb-wrap'));
+      const idxInPool = wraps.indexOf(wrap);
+      const deletedDataUrl = poolDataUrls[idx][idxInPool];
+      const currentModalSrc = modalImg.src;
       removeFromPool(idx, wrap);
+      // Close modal if deleted image is currently displayed
+      if (deletedDataUrl === currentModalSrc) {
+        closeModal();
+      }
     });
 
     const renderThumb = (dataUrl) => {
@@ -513,6 +597,12 @@
       wrap.appendChild(img);
       wrap.appendChild(del);
       dropzone.appendChild(wrap);
+
+      wrap.addEventListener('click', (e) => {
+        if (e.target === del) return;
+        e.stopPropagation();
+        openModal(dataUrl);
+      });
     };
 
     if (existingDataUrl) {
